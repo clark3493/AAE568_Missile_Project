@@ -1,4 +1,4 @@
-function Cm = DirCostMat(phi,theta,psi)
+function Cm = DirCosMat(phi,theta,psi)
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %   Function Name:            DirCosMat
 %   Function Author:          Steve Clark
