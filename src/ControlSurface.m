@@ -10,15 +10,15 @@ classdef ControlSurface < handle
 %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     properties
-        angle        % angle of the undeflected control surface wrt x-x axis
+        angle        % angle of the undeflected control surface wrt x-z axis
         area         % surface area
-        x            % x-coordinate of center of lift, as measured from tip
+        x            % x-coordinate of neutral point, as measured from tip
         
         def          % instantaneous deflection from neutral position
         
-        movable      % boolean to define mmovable or stationary
+        movable      % boolean to define movable or stationary
         
-        CLalpha      % slope of list curve wrt AoA
+        CLalpha      % slope of lift curve wrt AoA
         CL           % lift coefficient
         CD           % drag coefficient
        

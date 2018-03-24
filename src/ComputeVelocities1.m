@@ -18,7 +18,7 @@ function [ue,ve,we,ub,vb,wb] = ComputeVelocities1(V,phi,theta,psi)
 %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-    % compute the axis velocity components
+    % compute the earth axis velocity components
     ue = V * cos(theta) * cos(psi);
     ve = V * cos(phi)   * sin(psi);
     we =-V * sin(theta);

@@ -8,7 +8,7 @@ function x = Solve6DOF(F,x0,P,dt,varargin)
 %   SCRIPT DESCRIPTION:
 %       Calculates the 6 degree-of-freedom vehicle state variables at the
 %       subsequent timestep given the summed forces in each of the 6 
-%       directions and initial states
+%       directions and states at the current time step
 %   
 %   INPUTS:
 %       F = 6 element vector containing the summed forces and moments along
@@ -28,12 +28,15 @@ function x = Solve6DOF(F,x0,P,dt,varargin)
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 % Input error checking
-if length(F) ~= 6 || length(x0) ~= 6 || length(P) ~= 4
+if length(F) ~= 6 || length(x0) ~= 6
     error('Input force and initial state vector must have 6 elements');
+elseif length(P) ~= 4
+    error('Input parameter vector must have 4 elements');
+end
 
 % get specified solution method if any
 solution_options = {};
-if nargin > 0
+if nargin > 4
     sol = varargin{1};
     if ~any(strcmp(solution_options,sol))
         error('Specified solution method is not a valid option');

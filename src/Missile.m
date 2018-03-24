@@ -30,6 +30,10 @@ classdef Missile < handle
         x          % absolute position in inertial space
         y
         z
+
+		phi		   % Euler angles (heading relative to inertial axes)
+		theta
+		psi
         
         u          % linear velocity in body axes
         v
