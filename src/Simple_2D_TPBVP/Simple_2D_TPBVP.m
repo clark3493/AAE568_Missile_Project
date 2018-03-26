@@ -15,14 +15,14 @@
 %       - Aerodynamic forces are not considered
 %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-clearvars;
+clearvars; close all;
 
 %% ----- USER INPUTS ------------------------------------------------------
 
 % initial conditions
 global x0 z0 xdot0 zdot0;
 x0 = 0.;        % x coord, absolute coordinates, meters
-z0 = -1000.;    % z coord, absolute coordinates, meters  (z = -altitude)
+z0 = -2000.;    % z coord, absolute coordinates, meters  (z = -altitude)
 xdot0 = 100.;   % x velocity, absolute coordinates, m/s
 zdot0 = 0.;     % z velocity, absolute coordinates, m/s
 
@@ -30,7 +30,7 @@ zdot0 = 0.;     % z velocity, absolute coordinates, m/s
 global X Z eta;
 X = 2000;       % target x absolute coordinates, meters
 Z = 0.;         % target z absolute coordinates, meters
-eta = 45.;      % desired impact angle relative to horizontal, deg
+eta = 25.;      % desired impact angle relative to horizontal, deg
 
 % cost function weights
 global A B;
@@ -47,8 +47,9 @@ g = 9.81;       % m/s^2
 global usign;
 
 npts = 5000;     % number of time steps between t0 and tf (inclusive)
-reltol = .5;     % relative tolerance for bvp4c solution
+reltol = .01;     % relative tolerance for bvp4c solution
 usign = -1;      % 1 = num+,den-; -1 = num-,den+
+mu = [.074 .187];   % initial guesses for the value of mu1 and mu2
 
 %% ----- END USER INPUTS --------------------------------------------------
 
@@ -57,7 +58,7 @@ tau0 = 0.;      % parameterized time variable
 tauf = 1.;
 tau_init = linspace(tau0, tauf, npts); 
 
-param_guess = [ (X - x0) / xdot0, 0.5, 0.5 ]; % [ tf, mu1, mu2 ]
+param_guess = [ (X - x0) / xdot0, mu(1), mu(2) ]; % [ tf, mu1, mu2 ]
 
 var_init = [ x0;
              z0;
@@ -78,6 +79,7 @@ tau = sol.x;
 y = sol.y;
 tf = sol.parameters(1);
 disp(['tf = ',num2str(tf),' s'])
+disp(['mu1 = ',num2str(sol.parameters(2)),'; mu2 = ',num2str(sol.parameters(3))])
 
 t = tau*tf;
 u = atan2( usign*y(4,:), -usign*y(3,:) );
@@ -132,9 +134,9 @@ function res = BVP_bc(ya,yb,params)
     
     % intermediate calculations
     lambda3_tf = 2*A * yb(4) / ( yb(4)^2 + yb(3)^2 ) * ...
-        ( eta - atan2( yb(4), yb(3) ) );
+        ( eta*pi/180 - atan2( yb(4), yb(3) ) );
     lambda4_tf = 2*A / ( yb(4)^2 / yb(3) + yb(3) ) * ...
-        ( eta + atan2( yb(4), yb(3) ) );
+        ( eta*pi/180 + atan2( yb(4), yb(3) ) );
     tf_constraint = B + yb(5)*yb(3) + yb(6)*yb(4) + ...
         yb(7) * m/T * cos(uf) + yb(8) * ( g - m/T * sin(uf) );
     
