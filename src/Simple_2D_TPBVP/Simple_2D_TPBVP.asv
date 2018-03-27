@@ -30,17 +30,17 @@ zdot0 = 0.;     % z velocity, absolute coordinates, m/s
 global X Z eta;
 X = 2000;       % target x absolute coordinates, meters
 Z = 0.;         % target z absolute coordinates, meters
-eta = 63.;      % desired impact angle relative to horizontal, deg
+eta = 25.;      % desired impact angle relative to horizontal, deg
 
 % cost function weights
 global A B;
-A = 10.;         % impact angle
-B = 0.;         % time to target
+A = 0.;         % impact angle
+B = 1.;         % time to target
 
 % constant parameters
 global m T g;
 m = 100.;       % kg
-T = 1000.;       % N
+T = 100.;       % N
 g = 9.81;       % m/s^2
 
 % numerical solution parameters
@@ -82,8 +82,8 @@ disp(['tf = ',num2str(tf),' s'])
 disp(['mu1 = ',num2str(sol.parameters(2)),'; mu2 = ',num2str(sol.parameters(3))])
 
 t = tau*tf;
+
 %u = atan( y(8,:) ./ y(7,:) );
-u = atan2( usign*y(8,:), -usign*y(7,:) );
 
 %% PLOTTING
 fig = figure;
@@ -132,8 +132,8 @@ end
 function res = BVP_bc(ya,yb,params)
     global x0 z0 xdot0 zdot0 X Z A B eta m T g usign;
     
-    %uf = atan( yb(8) / yb(7) );
-    uf = atan2( usign*yb(8), -usign*yb(7) );
+    % uf = atan2( usign*yb(8), -usign*yb(7) );
+    uf = atan( yb(8) / yb(7) );
     
     % intermediate calculations
     lambda3_tf = 2*A * yb(4) / ( yb(4)^2 + yb(3)^2 ) * ...
