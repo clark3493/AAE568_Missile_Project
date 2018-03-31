@@ -10,7 +10,7 @@
 %         considered a control and control surface deflections are not 
 %         considered.
 %       - No inequality constraints (i.e. no limits on vehicle or control
-%         surface angle of attack
+%         surface angle of attack)
 %       - Constant thrust
 %       - Aerodynamic forces are not considered
 %
@@ -22,30 +22,29 @@ clearvars; close all;
 % initial conditions
 global x0 z0 xdot0 zdot0;
 x0 = 0.;        % x coord, absolute coordinates, meters
-z0 = -2000.;    % z coord, absolute coordinates, meters  (z = -altitude)
-xdot0 = 100.;   % x velocity, absolute coordinates, m/s
+z0 = -4000.;    % z coord, absolute coordinates, meters  (z = -altitude)
+xdot0 = 500.;   % x velocity, absolute coordinates, m/s
 zdot0 = 0.;     % z velocity, absolute coordinates, m/s
 
 % final conditions
 global X Z eta;
-X = 2000;       % target x absolute coordinates, meters
+X = 10000;       % target x absolute coordinates, meters
 Z = 0.;         % target z absolute coordinates, meters
-eta = 63.;      % desired impact angle relative to horizontal, deg
+eta = 45.;      % desired impact angle relative to horizontal, deg
 
 % cost function weights
 global A B;
-A = 10.;         % impact angle
+A = 1.;         % impact angle
 B = 0.;         % time to target
 
 % constant parameters
 global m T g;
-m = 100.;       % kg
-T = 1000.;       % N
-g = 9.81;       % m/s^2
+m = 100.;       % missile mass, kg
+T = 1000.;       % propulsive thrust, N
+g = 9.81;       % gravity, m/s^2
 
 % numerical solution parameters
 global usign;
-
 npts = 5000;     % number of time steps between t0 and tf (inclusive)
 reltol = .1;     % relative tolerance for bvp4c solution
 usign = -1;      % 1 = num+,den-; -1 = num-,den+
@@ -108,7 +107,7 @@ grid on;
 
 %% TP-BVP DEFINITION
 
-% y(1:4) = x(1:4), y(5:8) = lambda(5:8), params = [tf mu1 mu2]
+% y(1:4) = x(1:4), y(5:8) = lambda(1:4), params = [tf mu1 mu2]
 
 % define the ODE
 function dydt = BVP_ode(tau,y,params)
@@ -142,8 +141,14 @@ function res = BVP_bc(ya,yb,params)
     lambda4_tf = 2*A / ( yb(4)^2 / yb(3) + yb(3) ) * ...
         ( eta*pi/180 + atan( yb(4) / yb(3) ) );
         %( eta*pi/180 + atan2( yb(4), yb(3) ) );
-    tf_constraint = B + yb(5)*yb(3) + yb(6)*yb(4) + ...
-        yb(7) * m/T * cos(uf) + yb(8) * ( g - m/T * sin(uf) );
+    tf_constraint = A * (...
+		(1/yb(3)*(g-m/T*sin(uf))-yb(4)/yb(3)^2*m/T*cos(uf)) *...
+			(2*atan(yb(4)/yb(3))+eta*pi/180)/((yb(4)/yb(3))^2+1) ) +...
+		B +...
+		yb(5) * yb(3) +...
+		yb(6) * yb(4) +...
+		yb(7) * m/T*cos(uf) +...
+		yb(8) * ( g - m/T*sin(uf) );
     
     res = [ ya(1) - x0;         % state initial conditions
             ya(2) - z0;
@@ -155,5 +160,5 @@ function res = BVP_bc(ya,yb,params)
             yb(6) - params(3);
             yb(7) - lambda3_tf;
             yb(8) - lambda4_tf;
-            tf_constraint - 0 ];       
+            tf_constraint - 0 ];% from 4th Euler-Lagrange equation    
 end

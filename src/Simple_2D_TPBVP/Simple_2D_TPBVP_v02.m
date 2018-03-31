@@ -10,9 +10,12 @@
 %         considered a control and control surface deflections are not 
 %         considered.
 %       - No inequality constraints (i.e. no limits on vehicle or control
-%         surface angle of attack
+%         surface angle of attack)
 %       - Constant thrust
 %       - Aerodynamic forces are not considered
+%
+%       ** SOLUTION IS THE SAME AS ORIGINAL SIMPLE_2D_TPBVP EXCEPT THE
+%       IMPACT ANGLE IS MODELED AS A HARD CONSTRAINT
 %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 clearvars; close all;
@@ -22,34 +25,29 @@ clearvars; close all;
 % initial conditions
 global x0 z0 xdot0 zdot0;
 x0 = 0.;        % x coord, absolute coordinates, meters
-z0 = -2000.;    % z coord, absolute coordinates, meters  (z = -altitude)
-xdot0 = 100.;   % x velocity, absolute coordinates, m/s
+z0 = -4000.;    % z coord, absolute coordinates, meters  (z = -altitude)
+xdot0 = 500.;   % x velocity, absolute coordinates, m/s
 zdot0 = 0.;     % z velocity, absolute coordinates, m/s
 
 % final conditions
 global X Z eta;
-X = 2000;       % target x absolute coordinates, meters
+X = 10000;       % target x absolute coordinates, meters
 Z = 0.;         % target z absolute coordinates, meters
-eta = 25.;      % desired impact angle relative to horizontal, deg
-
-% cost function weights
-global A B;
-A = 0.;         % impact angle
-B = 1.;         % time to target
+eta = 45.;      % desired impact angle relative to horizontal, deg
 
 % constant parameters
 global m T g;
-m = 100.;       % kg
-T = 100.;       % N
-g = 9.81;       % m/s^2
+m = 100.;       % missile mass, kg
+T = 2000.;       % propulsive thrust, N
+g = 9.81;       % gravity, m/s^2
 
 % numerical solution parameters
 global usign;
-
 npts = 5000;     % number of time steps between t0 and tf (inclusive)
-reltol = .1;     % relative tolerance for bvp4c solution
+reltol = 10.;     % relative tolerance for bvp4c solution
+abstol = 1.;    % absolute tolerance for bvp4c solution
 usign = -1;      % 1 = num+,den-; -1 = num-,den+
-mu = [.074 .187];   % initial guesses for the value of mu1 and mu2
+mu = [1. 1. 1.];   % initial guesses for the value of mu1, mu2, mu3
 
 %% ----- END USER INPUTS --------------------------------------------------
 
@@ -58,7 +56,7 @@ tau0 = 0.;      % parameterized time variable
 tauf = 1.;
 tau_init = linspace(tau0, tauf, npts); 
 
-param_guess = [ (X - x0) / xdot0, mu(1), mu(2) ]; % [ tf, mu1, mu2 ]
+param_guess = [ (X - x0) / xdot0, mu(1), mu(2), mu(3) ]; % [ tf, mu1, mu2, mu3 ]
 
 var_init = [ x0;
              z0;
@@ -70,7 +68,7 @@ var_init = [ x0;
              0.5 ];
 
 solinit = bvpinit(tau_init,var_init,param_guess);
-options = bvpset('Stats','on','RelTol',reltol);
+options = bvpset('Stats','on','RelTol',reltol,'AbsTol',abstol);
 
 %% SOLUTION
 
@@ -78,12 +76,18 @@ sol = bvp4c(@BVP_ode, @BVP_bc, solinit, options);
 tau = sol.x;
 y = sol.y;
 tf = sol.parameters(1);
+mu1 = sol.parameters(2);
+mu2 = sol.parameters(3);
+mu3 = sol.parameters(4);
+etaf = atan2( y(4,end), y(3,end) );
 disp(['tf = ',num2str(tf),' s'])
-disp(['mu1 = ',num2str(sol.parameters(2)),'; mu2 = ',num2str(sol.parameters(3))])
+disp(['mu1 = ',num2str(mu1),'; mu2 = ',num2str(mu2),'; mu3 = ',num2str(mu3)])
+disp(['The terminal impact angle is ',num2str(etaf*180/pi),' deg'])
+disp(['The velocity at impact is ',num2str(sqrt(y(4,end)^2+y(3,end)^2)),' m/s'])
 
 t = tau*tf;
-
 %u = atan( y(8,:) ./ y(7,:) );
+u = atan2( usign*y(8,:), -usign*y(7,:) );
 
 %% PLOTTING
 fig = figure;
@@ -108,7 +112,7 @@ grid on;
 
 %% TP-BVP DEFINITION
 
-% y(1:4) = x(1:4), y(5:8) = lambda(5:8), params = [tf mu1 mu2]
+% y(1:4) = x(1:4), y(5:8) = lambda(1:4), params = [tf mu1 mu2]
 
 % define the ODE
 function dydt = BVP_ode(tau,y,params)
@@ -130,20 +134,26 @@ end
 
 % define the BC's
 function res = BVP_bc(ya,yb,params)
-    global x0 z0 xdot0 zdot0 X Z A B eta m T g usign;
+    global x0 z0 xdot0 zdot0 X Z eta m T g usign;
     
-    % uf = atan2( usign*yb(8), -usign*yb(7) );
-    uf = atan( yb(8) / yb(7) );
+    mu3 = params(4);
+    uf = atan2( usign*yb(8), -usign*yb(7) );
     
     % intermediate calculations
-    lambda3_tf = 2*A * yb(4) / ( yb(4)^2 + yb(3)^2 ) * ...
+    lambda3_tf = 2*mu3 * yb(4) / ( yb(4)^2 + yb(3)^2 ) * ...
         ( eta*pi/180 - atan( yb(4) / yb(3) ) );
         %( eta*pi/180 - atan2( yb(4), yb(3) ) );
-    lambda4_tf = 2*A / ( yb(4)^2 / yb(3) + yb(3) ) * ...
+    lambda4_tf = 2*mu3 / ( yb(4)^2 / yb(3) + yb(3) ) * ...
         ( eta*pi/180 + atan( yb(4) / yb(3) ) );
         %( eta*pi/180 + atan2( yb(4), yb(3) ) );
-    tf_constraint = B + yb(5)*yb(3) + yb(6)*yb(4) + ...
-        yb(7) * m/T * cos(uf) + yb(8) * ( g - m/T * sin(uf) );
+    tf_constraint = mu3 * (...
+		(1/yb(3)*(g-m/T*sin(uf))-yb(4)/yb(3)^2*m/T*cos(uf)) *...
+			(2*atan(yb(4)/yb(3))+eta*pi/180)/((yb(4)/yb(3))^2+1) ) +...
+		1 +...
+		yb(5) * yb(3) +...
+		yb(6) * yb(4) +...
+		yb(7) * m/T*cos(uf) +...
+		yb(8) * ( g - m/T*sin(uf) );
     
     res = [ ya(1) - x0;         % state initial conditions
             ya(2) - z0;
@@ -151,9 +161,10 @@ function res = BVP_bc(ya,yb,params)
             ya(4) - zdot0;
             yb(1) - X;          % target position
             yb(2) - Z;
+            atan2( yb(4), yb(3) ) - eta*pi/180;
             yb(5) - params(2);  % co-state final conditions
             yb(6) - params(3);
             yb(7) - lambda3_tf;
             yb(8) - lambda4_tf;
-            tf_constraint - 0 ];       
+            tf_constraint - 0 ];% from 4th Euler-Lagrange equation    
 end
