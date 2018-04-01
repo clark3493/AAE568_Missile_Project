@@ -31,12 +31,12 @@ zdot0 = 0.;     % z velocity, absolute coordinates, m/s
 global X Z eta;
 X = 2000;       % target x absolute coordinates, meters
 Z = 0.;         % target z absolute coordinates, meters
-eta = 63.;      % desired impact angle relative to horizontal, deg
+eta = 45.;      % desired impact angle relative to horizontal, deg
 
 % cost function weights
 global A B;
-A = 10.;         % impact angle
-B = 0.;         % time to target
+A = 1.;         % impact angle
+B = 1.;         % time to target
 
 % constant parameters
 global m T g;
