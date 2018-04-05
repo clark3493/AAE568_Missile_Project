@@ -21,6 +21,7 @@ u = NaN*zeros(n,T);
 for t = T:-1:1
     cost = gxu + repmat(V(:,t+1)',n,1)
     [V(:,t),u(:,t)] = min(gxu + repmat(V(:,t+1)',n,1), [], 2);
+    a = repmat(V(:,t+1)',n,1)
     [V(:,t),u(:,t)]
 end
 
