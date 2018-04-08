@@ -1,75 +1,93 @@
-clearvars;
+clearvars; close all;
 
-% discretize the possible state variables and controls
-X1 = -0.1:0.01:0.3;
-X2 = -0.1:0.01:0.3;
-U  =  0. :0.1:2.0;
+%% discretize the state, control and time
+x1_min = -0.2;
+x1_max =  0.2;
+dx1 = .01;
 
-% number of discretized options
-nx1 = length(X1);
-nx2 = length(X2);
-nu  = length(U);
+x2_min = -0.2;
+x2_max =  0.2;
+dx2 = .01;
 
-tf = 0.78;      % final time
-dt = .01;       % time step
+u_min = 0;
+u_max = 2;
+du = .01;
 
-% calculate running costs for all possible combinations of x and u
-gxu = Inf*ones(nx1,nx2,nu);
+t0 = 0;
+tf = .78;
+dt = .01;
 
-for i = 1:nx1
-    for j = 1:nx2
-        for k = 1:nu
-            gxu(i,j,k) = 1.*X1(i)^2 + 1.*X2(j)^2 + 0.1*U(k)^2;
-        end
+x1_vec = x1_min:dx1:x1_max;
+x2_vec = x2_min:dx2:x2_max;
+u_vec = u_min:du:u_max;
+t = t0:dt:tf;
+
+Nx1 = length(x1_vec);
+Nx2 = length(x2_vec);
+Nu = length(u_vec);
+Nt = length(t);
+
+%% calculate the immediate cost for every combination of state and control
+[X1,X2,U] = ndgrid(x1_vec,x2_vec,u_vec);
+L = X1.^2 + X2.^2 + .1*U.^2;
+
+%% initialize the cost storage and control matrices
+V = Inf*ones(Nx1,Nx2,Nt);
+V(:,:,end) = 0;     % no terminal state cost
+u = NaN*ones(Nx1,Nx2,Nt-1);
+uind = NaN*ones(Nx1,Nx2,Nt-1);
+
+% calculate the next state for every combination of current state and control
+[x1_next,x2_next] = f(X1,X2,U,dt);
+
+% find optimal control and cost for every state at every time step
+[x1_state_grid, x2_state_grid] = ndgrid(x1_vec,x2_vec);
+for k = Nt-1:-1:1
+    Vfuture = Inf*ones(Nx1,Nx2,Nu);
+    for i = 1:Nu
+        Vfuture(:,:,i) = interpn(x1_state_grid,x2_state_grid,V(:,:,k+1),...
+            x1_next(:,:,i),x2_next(:,:,i));
     end
+    cost = L+Vfuture;
+    [V(:,:,k),uind(:,:,k)] = min(cost,[],3);
+    u(:,:,k) = u_vec(uind(:,:,k));
 end
 
-% Value function
-V = Inf*ones(nx1,nx2,tf/dt+1);
-V(:,:,end) = zeros(nx1,nx2);    % initialized to 0 b/c no terminal constraints
+% calculate solution for given initial conditions
+u_actual = NaN*ones(1,Nt-1);
+x = NaN*ones(2,Nt);
+x(:,1) = [.05; 0];
 
-u = NaN*ones(nx1,nx2,tf/dt);    % optimal control matrix for every combination
-                                % of x1 and x2 for every time step
-
-% start at final time and work backward
-% !!!! THIS SECTION IS LIKELY A SOURCE OF BUGS !!!!
-for t = tf/dt:-1:1
-    [V(:,:,t),u(:,:,t)] = min(gxu + repmat(V(:,:,t+1),1,1,nu),[],3);
+for k = 1:Nt-1
+    u_actual(k) = interpn(x1_state_grid,x2_state_grid,u(:,:,k),x(1,k),x(2,k));
+    [x(1,k+1), x(2,k+1)] = f(x(1,k),x(2,k),u_actual(k),dt);
 end
 
-% initialize vectors to store calculated optimal solution
-x1 = NaN*ones(1,tf/dt+1);
-x2 = NaN*ones(1,tf/dt+1);
-u_opt = NaN*ones(1,tf/dt);
-
-% initial state
-x1(1) = 0.05;
-x2(1) = 0.;
-
-[x1_grid, x2_grid] = meshgrid(X1,X2);
-
-% iterate through time
-for t = 1:tf/dt
-    % iterate for the optimal control with the actual state at each time step
-    u_opt(t) = interp2(x1_grid,x2_grid,u(:,:,t)',x1(t),x2(t));
-    % determine state at next time step
-    [x1(t+1),x2(t+1)] = f(x1(t),x2(t),u_opt(t),dt);
+% get cost at every time step for plotting
+V_plot = NaN*ones(1,Nt);
+for k = 1:Nt
+    V_plot(k) = interpn(x1_state_grid,x2_state_grid,V(:,:,k),x(1,k),x(2,k));
 end
-
-t = 0:dt:tf;
 
 fig = figure;
 
-subplot(211)
-plot(t,x1,'r'); hold on;
-plot(t,x2,'g');
-legend('x1','x2');
+subplot(311)
+plot(t,x(1,:)); hold on;
+plot(t,x(2,:));
+legend('x1','x2')
+ylabel('state','FontSize',16)
 
-subplot(212)
-plot(t(1:end-1),u_opt,'k');
+subplot(312)
+plot(t(1:end-1),u_actual)
+ylabel('u','FontSize',16)
+
+subplot(313)
+plot(t,V_plot)
+xlabel('Time (s)','FontSize',16)
+ylabel('Cost','FontSize',16)
 
 % dynamics
-function [x1,x2] = f(x1_,x2_, u, dt)
-    x1 = dt * ( -2*(x1_+.25) + (x2_ + .5)*exp(25*x1_/(x1_+2)) - (x1_+.25)*u);
-    x2 = dt * ( 0.5 - x2_ - (x2_+0.5)*exp(25*x1_/(x1_+2)));
+function [x1_,x2_] = f(x1,x2,u,dt)
+    x1_ = x1 + dt .* (-2.*(x1+0.25) + (x2+0.5).*exp(25.*x1./(x1+2)) - (x1+.25).*u);
+    x2_ = x2 + dt .* (0.5 - x2 - (x2+0.5).*exp(25.*x1./(x1+2)));
 end
