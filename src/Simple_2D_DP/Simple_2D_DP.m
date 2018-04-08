@@ -16,9 +16,14 @@
 %       - Aerodynamic forces are not considered
 %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-clearvars; close all;
+clearvars; close all; clc;
 
 %% ----- USER INPUTS ------------------------------------------------------
+
+% user switches for portions of the solution
+step1 = 1;      % full state + control space evaluation
+step2 = 0;      % solution for specific initial conditions
+step3 = 0;      % post processing
 
 % initial conditions
 global x0 z0 xdot0 zdot0;
@@ -28,9 +33,9 @@ xdot0 = 100.;   % x velocity, absolute coordinates, m/s
 zdot0 = 0.;     % z velocity, absolute coordinates, m/s
 
 % final conditions
-global X Z eta;
-X = 2000;       % target x absolute coordinates, meters
-Z = 0.;         % target z absolute coordinates, meters
+global x_target z_target eta;
+x_target = 2000;       % target x absolute coordinates, meters
+z_target = 0.;         % target z absolute coordinates, meters
 eta = 45.;      % desired impact angle relative to horizontal, deg
 
 % cost function weights
@@ -41,23 +46,140 @@ B = 1.;         % time to target
 % constant parameters
 global m T g;
 m = 100.;       % kg
-T = 1000.;       % N
+T = 1000.;      % N
 g = 9.81;       % m/s^2
 
-% numerical solution parameters
+% discretization and numerical solution parameters
+Nx = 21;       % number of discretized points for each variable
+Nz = 21;
+Nxdot = 21;
+Nzdot = 21;
 
+Nu = 19;
+Ntau = 101;
+Ntf = 11;
+
+rmin = 0.75;    % ratio to use when determining the minimum value of x3,x4,tf
+rmax = 1.5;     % ratio to use when determining the maximum value of x3,x4,tf
 
 %% ----- END USER INPUTS --------------------------------------------------
 
-%% INITIALIZATION
+%% FULL STATE + CONTROL SPACE COST AND OPTIMAL CONTROL EVALUATION
+if step1 == 1
+    %% INITIALIZATION
 
+    % calculate solution to minimum distance problem
+    eta_md = atand((z_target-z0)/(x_target-x0));
+    tf_md = max(roots([.5*T/m*cosd(eta_md), xdot0, x0-x_target]));
+    xdot_mdf = xdot0 + tf_md*T/m*cosd(eta_md);
+    zdot_mdf = zdot0 + tf_md*(g + T/m*sind(eta_md));
 
-%% SOLUTION
+    % determine min and max value for x3,x4,tf
+    xdot_min = rmin * xdot0;
+    xdot_max = rmax * xdot_mdf;
 
+    zdot_min = rmin * zdot0;
+    zdot_max = rmax * zdot_mdf;
+
+    tf_min = rmin * tf_md;
+    tf_max = rmax * tf_md;
+
+    % discretize the state, control and time variables
+    dx = (x_target - x0) / (Nx-1);
+    dz = (z_target - z0) / (Nz-1);
+    dxdot = (xdot_max - xdot_min) / (Nxdot-1);
+    dzdot = (zdot_max - zdot_min) / (Nzdot-1);
+    du = 180 / (Nu-1);
+    dtau = 1 / (Ntau-1);
+    dtf = (tf_max - tf_min) / (Ntf-1);
+
+    x_vec = x0:dx:x_target;
+    z_vec = z0:dz:z_target;
+    xdot_vec = xdot_min:dxdot:xdot_max;
+    zdot_vec = zdot_min:dzdot:zdot_max;
+    u_vec = -90:du:90;
+    tau = 0:dtau:1;
+    tf_vec = tf_min:dtf:tf_max;
+
+    [X,Z,XDOT,ZDOT,U] = ndgrid(x_vec,z_vec,xdot_vec,zdot_vec,u_vec);
+    [x_state_grid,z_state_grid,xdot_state_grid,zdot_state_grid] = ...
+        ndgrid(x_vec,z_vec,xdot_vec,zdot_vec);
+    f_inds = x_state_grid == x_target & z_state_grid == z_target;
+
+    %% SOLUTION
+
+    % initialize cost and control matrices
+    V = Inf*ones(Nx,Nz,Nxdot,Nzdot,Ntau,Ntf);
+    uind = NaN*ones(Nx,Nz,Nxdot,Nzdot,Ntau-1,Ntf);
+    u = NaN*ones(Nx,Nz,Nxdot,Nzdot,Ntau-1,Ntf);
+
+    % set final costs for valid final states (all other final state costs=infinity)
+    temp = Inf*ones(Nx,Nz,Nxdot,Nzdot);
+    temp(f_inds) = atand(z_state_grid(f_inds)./x_state_grid(f_inds));
+    for i = 1:Ntf
+        V(:,:,:,:,end,i) = ...
+            A .* ( temp - eta ) .^ 2;
+    end
+    clear temp f_inds;
+
+    tstart = tic;
+    % iterate over each value of tf
+    for itf = 1:length(tf_vec)
+        tf = tf_vec(itf);
+        dt = tf/(Ntau-1);
+        disp(['Performing solution for tf = ',num2str(tf),' sec'])
+        tstart_local = tic;
+
+        % calculate immediate cost for each time step
+        L = B * dtau * tf;      % same for every combination of state and control
+
+        % calculate next state for all combinations of state and control
+        [x_next,z_next,xdot_next,zdot_next] = f(X,Z,XDOT,ZDOT,U,dt);
+
+        % find optimal control and cost for every state at every time step
+        for k = Ntau-1:-1:1
+            Vfuture = Inf*ones(Nx,Nz,Nxdot,Nzdot,Nu);
+            for i = 1:Nu
+                Vfuture(:,:,:,:,i) = interpn(x_state_grid,z_state_grid,xdot_state_grid,...
+                    zdot_state_grid,V(:,:,:,:,k+1),x_next(:,:,:,:,i),z_next(:,:,:,:,i),...
+                    xdot_next(:,:,:,:,i),zdot_next(:,:,:,:,i));
+            end
+            cost = L + Vfuture;
+            [V(:,:,:,:,k,itf),uind(:,:,:,:,k,itf)] = min(cost,[],5);
+            u(:,:,:,:,k,itf) = u_vec(uind(:,:,:,:,k,itf));
+        end
+
+        disp(['Finished local solution in ',num2str(round(toc(tstart_local),1)),' sec'])
+        disp([num2str(round(toc(tstart)/60,2)),' minutes elapsed - ',num2str(round(itf/Ntf*100)),'% complete with full solution'])
+        disp(' ')
+    end
+
+    tend = toc(tstart);
+    disp(['TOTAL STATE + CONTROL SPACE SOLUTION CALCULATED IN ',num2str(round(toc(tstart)/60,1)),' MINUTES'])
+end
+
+%% SOLUTION FOR SPECIFIED INITIAL CONDITIONS
+%if step2 == 1
+%    u_actual = NaN*ones(1,Ntau-1);
+%    x = NaN*ones(4,Ntau);
+%    x(:,1) = [x0; z0; xdot0; zdot0];
+    
+%    for k = 1:Ntau-1
+        
+%    end
+%end
 
 %% PLOTTING
 
 
 %% FUNCTION DEFINITIONS
 
-
+% dynamics
+function [x_,z_,xdot_,zdot_] = f(x,z,xdot,zdot,u,dt)
+    global m T g;
+    
+    x_ = x + dt .* xdot;
+    z_ = z + dt .* zdot;
+    xdot_ = xdot + dt .* ( T/m .* cosd(u) );
+    zdot_ = zdot + dt .* ( g - T/m .* sind(u) );
+end
