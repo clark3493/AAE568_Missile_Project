@@ -16,14 +16,18 @@
 %       - Aerodynamic forces are not considered
 %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-clearvars; close all; clc;
+close all; clc;
 
 %% ----- USER INPUTS ------------------------------------------------------
 
 % user switches for portions of the solution
-step1 = 1;      % full state + control space evaluation
-step2 = 0;      % solution for specific initial conditions
-step3 = 0;      % post processing
+step1 = 0;      % full state + control space evaluation
+if step1 == 1
+    clearvars;
+    step1 = 1;
+end
+step2 = 1;      % solution for specific initial conditions
+step3 = 1;      % post processing
 
 % initial conditions
 global x0 z0 xdot0 zdot0;
@@ -36,7 +40,7 @@ zdot0 = 0.;     % z velocity, absolute coordinates, m/s
 global x_target z_target eta;
 x_target = 2000;       % target x absolute coordinates, meters
 z_target = 0.;         % target z absolute coordinates, meters
-eta = 45.;      % desired impact angle relative to horizontal, deg
+eta = 45.;             % desired impact angle relative to horizontal, deg
 
 % cost function weights
 global A B;
@@ -59,8 +63,12 @@ Nu = 19;
 Ntau = 101;
 Ntf = 11;
 
-rmin = 0.75;    % ratio to use when determining the minimum value of x3,x4,tf
+rmin = 1.0;    % ratio to use when determining the minimum value of x3,x4,tf
 rmax = 1.5;     % ratio to use when determining the maximum value of x3,x4,tf
+
+MyInf = 10000;  % high cost value to allow interpolation
+
+global x_vec z_vec xdot_max xdot_min zdot_max zdot_min;
 
 %% ----- END USER INPUTS --------------------------------------------------
 
@@ -109,13 +117,13 @@ if step1 == 1
     %% SOLUTION
 
     % initialize cost and control matrices
-    V = Inf*ones(Nx,Nz,Nxdot,Nzdot,Ntau,Ntf);
+    V = MyInf*ones(Nx,Nz,Nxdot,Nzdot,Ntau,Ntf);
     uind = NaN*ones(Nx,Nz,Nxdot,Nzdot,Ntau-1,Ntf);
     u = NaN*ones(Nx,Nz,Nxdot,Nzdot,Ntau-1,Ntf);
 
     % set final costs for valid final states (all other final state costs=infinity)
-    temp = Inf*ones(Nx,Nz,Nxdot,Nzdot);
-    temp(f_inds) = atand(z_state_grid(f_inds)./x_state_grid(f_inds));
+    temp = MyInf*ones(Nx,Nz,Nxdot,Nzdot);
+    temp(f_inds) = atand(zdot_state_grid(f_inds)./xdot_state_grid(f_inds));
     for i = 1:Ntf
         V(:,:,:,:,end,i) = ...
             A .* ( temp - eta ) .^ 2;
@@ -135,16 +143,17 @@ if step1 == 1
 
         % calculate next state for all combinations of state and control
         [x_next,z_next,xdot_next,zdot_next] = f(X,Z,XDOT,ZDOT,U,dt);
-
+        
         % find optimal control and cost for every state at every time step
         for k = Ntau-1:-1:1
-            Vfuture = Inf*ones(Nx,Nz,Nxdot,Nzdot,Nu);
+            Vfuture = MyInf*ones(Nx,Nz,Nxdot,Nzdot,Nu);
             for i = 1:Nu
                 Vfuture(:,:,:,:,i) = interpn(x_state_grid,z_state_grid,xdot_state_grid,...
-                    zdot_state_grid,V(:,:,:,:,k+1),x_next(:,:,:,:,i),z_next(:,:,:,:,i),...
-                    xdot_next(:,:,:,:,i),zdot_next(:,:,:,:,i));
+                    zdot_state_grid,V(:,:,:,:,k+1,itf),x_next(:,:,:,:,i),z_next(:,:,:,:,i),...
+                    xdot_next(:,:,:,:,i),zdot_next(:,:,:,:,i),'linear',10000);
             end
             cost = L + Vfuture;
+            
             [V(:,:,:,:,k,itf),uind(:,:,:,:,k,itf)] = min(cost,[],5);
             u(:,:,:,:,k,itf) = u_vec(uind(:,:,:,:,k,itf));
         end
@@ -159,17 +168,59 @@ if step1 == 1
 end
 
 %% SOLUTION FOR SPECIFIED INITIAL CONDITIONS
-%if step2 == 1
-%    u_actual = NaN*ones(1,Ntau-1);
-%    x = NaN*ones(4,Ntau);
-%    x(:,1) = [x0; z0; xdot0; zdot0];
+if step2 == 1
     
-%    for k = 1:Ntau-1
-        
-%    end
-%end
+    % find the value of tf for which the minimum cost occurs
+    Vtotal = NaN*ones(Ntf,1);
+    for i = 1:Ntf
+        Vtotal(i) = interpn(x_state_grid,z_state_grid,xdot_state_grid,zdot_state_grid,...
+                V(:,:,:,:,1,i),x0,z0,xdot0,zdot0);
+    end
+    
+    [Vmin,Imin] = min(Vtotal);
+    
+    u_actual = NaN*ones(1,Ntau-1);
+    x = NaN*ones(4,Ntau);
+    x(:,1) = [x0;z0;xdot0;zdot0];
+    
+    for k = 1:Ntau-1
+        u_actual(k) = interpn(x_state_grid,z_state_grid,xdot_state_grid,zdot_state_grid,...
+                u(:,:,:,:,k,Imin),x(1,k),x(2,k),x(3,k),x(4,k));
+        [x(1,k+1),x(2,k+1),x(3,k+1),x(4,k+1)] = f(x(1,k),x(2,k),x(3,k),x(4,k),u_actual(k),dtau*tf_vec(Imin));
+    end
+    
+    V_plot = NaN*ones(1,Ntau);
+    for k = 1:Ntau
+        V_plot(k) = interpn(x_state_grid,z_state_grid,xdot_state_grid,zdot_state_grid,...
+                V(:,:,:,:,k,Imin),x(1,k),x(2,k),x(3,k),x(4,k));
+    end
+end
 
-%% PLOTTING
+if step3 == 1
+    fig = figure;
+    
+    subplot(221)
+    plot(x(1,:),-x(2,:)); hold on;
+    xlabel('x')
+    ylabel('altitude')
+    
+    subplot(222)
+    plot(tf_vec(Imin)*tau,x(3,:)); hold on;
+    plot(tf_vec(Imin)*tau,x(4,:));
+    legend('xdot','zdot')
+    xlabel('Time (s)')
+    
+    subplot(223)
+    plot(tf_vec(Imin)*tau(1:end-1),u_actual)
+    xlabel('Time (s)')
+    ylabel('u')
+    
+    subplot(224)
+    plot(tf_vec(Imin)*tau,V_plot)
+    xlabel('Time (s)')
+    ylabel('cost')
+end
+
 
 
 %% FUNCTION DEFINITIONS
@@ -177,9 +228,19 @@ end
 % dynamics
 function [x_,z_,xdot_,zdot_] = f(x,z,xdot,zdot,u,dt)
     global m T g;
+    global x_vec z_vec xdot_max xdot_min zdot_max zdot_min;
     
     x_ = x + dt .* xdot;
     z_ = z + dt .* zdot;
     xdot_ = xdot + dt .* ( T/m .* cosd(u) );
     zdot_ = zdot + dt .* ( g - T/m .* sind(u) );
+    
+    %x_(x_ > max(x_vec)) = max(x_vec);
+    %x_(x_ < min(x_vec)) = min(x_vec);
+    %z_(z_ > max(z_vec)) = max(z_vec);
+    %z_(z_ < min(z_vec)) = min(z_vec);
+    %xdot_(xdot_>xdot_max) = xdot_max;
+    %xdot_(xdot_<xdot_min) = xdot_min;
+    %zdot_(zdot_>zdot_max) = zdot_max;
+    %zdot_(zdot_<zdot_min) = zdot_min;
 end
