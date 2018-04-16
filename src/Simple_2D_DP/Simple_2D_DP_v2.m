@@ -42,11 +42,11 @@ zdot0 = 0.;     % z velocity, absolute coordinates, m/s
 % final conditions
 global x_target z_target;
 x_target = 2000;       % target x absolute coordinates, meters
-z_target = 1.;         % target z absolute coordinates, meters
+z_target = -1.;         % target z absolute coordinates, meters
 eta = 45.;             % desired impact angle relative to horizontal, deg
 
 % cost function weights
-A = 0.;         % impact angle
+A = 1.;         % impact angle
 B = 1.;         % time to target
 C = 1000.;      % final position
 
@@ -68,6 +68,9 @@ Ntau = 101;     % number of normalized time steps from initial to final state
 
 Ntf = 11;
 
+u_min = -90;
+u_max =  90;
+
 rmin_v = 0.75;
 rmax_v = 1.50;
 
@@ -78,12 +81,13 @@ rmax_tf = 2.00;
 md_tol = .001;      % tolerance for ration between tf solution for x and z
                     % minimum distance problems before throwing error
                     
-MyInf = 10000;      % finite high cost value to allow interpolation
+MyInf = 9999999999;      % finite high cost value to allow interpolation
 
 %% ----- END USER INPUTS --------------------------------------------------
 
 %% INITIALIZATION
 if step1 == 1
+
     % calculate solution to minimum distance problem
     theta_md = fzero(@theta_md_fun,0);
     V0 = sqrt(xdot0^2 + zdot0^2);
@@ -109,7 +113,7 @@ if step1 == 1
     elseif abs(atand(zdotf_md/xdotf_md)-eta_md) > md_tol
         error('Ratio of etaf_md/eta_md for min distance problem is out of tolerance')
     end
-
+    
     % determine min and max values for xdot,zdot,tf
     x_min = x0 -100;
     x_max = x_target + 100;
@@ -131,7 +135,7 @@ if step1 == 1
     dz = (z_max - z_min) / (Nz-1);
     dxdot = (xdot_max - xdot_min) / (Nxdot-1);
     dzdot = (zdot_max - zdot_min) / (Nzdot-1);
-    du_theta = 180 / (Nu_theta-1);
+    du_theta = (u_max - u_min) / (Nu_theta-1);
     dtau = 1 / (Ntau-1);
     dtf = (tf_max - tf_min) / (Ntf-1);
 
@@ -139,7 +143,7 @@ if step1 == 1
     z_vec = z_min:dz:z_max;
     xdot_vec = xdot_min:dxdot:xdot_max;
     zdot_vec = zdot_min:dzdot:zdot_max;
-    u_theta_vec = -90:du_theta:90;
+    u_theta_vec = u_min:du_theta:u_max;
     tau_vec = 0:dtau:1;
     tf_vec = tf_min:dtf:tf_max;
 
@@ -160,7 +164,7 @@ if step1 == 1
             C * sqrt( (x_state-x_target).^2 + (z_state-z_target).^2 );
     end
     clear impact_angle valid_final_state_inds;
-
+    keyboard
     tstart = tic;
     for itf = 1:Ntf
         tf = tf_vec(itf);
@@ -186,6 +190,7 @@ if step1 == 1
             
             [V(:,:,:,:,k,itf),uind(:,:,:,:,k,itf)] = min(cost,[],5);
             u_theta(:,:,:,:,k,itf) = u_theta_vec(uind(:,:,:,:,k,itf));
+            
         end
         
         disp(['Finished local solution in ',num2str(round(toc(tstart_local),1)),' sec'])
@@ -205,7 +210,7 @@ if step2 == 1
         Vtotal(i) = interpn(x_state,z_state,xdot_state,zdot_state,V(:,:,:,:,1,i),...
             x0,z0,xdot0,zdot0,'linear',MyInf);
     end
-    
+    keyboard
     [Vmin,Imin] = min(Vtotal);
     
     u_actual = NaN*ones(1,Ntau-1);
@@ -216,7 +221,7 @@ if step2 == 1
     for k = 1:Ntau-1
         u_actual(k) = interpn(x_state,z_state,xdot_state,zdot_state,...
             u_theta(:,:,:,:,k,Imin),x(1,k),x(2,k),x(3,k),x(4,k));
-        alpha(k) = u_actual(k) + atand( x(3,k) / x(4,k) );
+        alpha(k) = u_actual(k) + atand( x(4,k) / x(3,k) );
         [x(1,k+1),x(2,k+1),x(3,k+1),x(4,k+1)] = f(x(1,k),x(2,k),x(3,k),x(4,k),u_actual(k),dtau*tf_vec(Imin));
     end
     
@@ -231,30 +236,35 @@ if step3 == 1
     fig = figure;
     
     subplot(321)
-    plot(x(1,:),-x(2,:)); hold on;
+    plot(x(1,:),-x(2,:),'r-o'); hold on;
     xlabel('x')
     ylabel('altitude')
+    grid on;
     
     subplot(322)
-    plot(tf_vec(Imin)*tau_vec,x(3,:)); hold on;
-    plot(tf_vec(Imin)*tau_vec,x(4,:));
+    plot(tf_vec(Imin)*tau_vec,x(3,:),'r-o'); hold on;
+    plot(tf_vec(Imin)*tau_vec,x(4,:),'b-o');
     legend('xdot','zdot')
     xlabel('Time (s)')
+    grid on;
     
     subplot(323)
-    plot(tf_vec(Imin)*tau_vec(1:end-1),u_actual)
+    plot(tf_vec(Imin)*tau_vec(1:end-1),u_actual,'r-o')
     xlabel('Time (s)')
     ylabel('u')
+    grid on;
     
     subplot(324)
-    plot(tf_vec(Imin)*tau_vec,V_plot)
+    plot(tf_vec(Imin)*tau_vec,V_plot,'r-o')
     xlabel('Time (s)')
     ylabel('cost')
+    grid on;
     
     subplot(325)
-    plot(tf_vec(Imin)*tau_vec,alpha)
+    plot(tf_vec(Imin)*tau_vec,alpha,'r-o')
     xlabel('Time (s)')
-    ylabel('$\alpha','Interpreter','latex')
+    ylabel('$\alpha$','Interpreter','latex')
+    grid on;
 end
 
 %% FUNCTION DEFINITIONS
