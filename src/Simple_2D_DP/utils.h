@@ -24,6 +24,13 @@ double mean(double *x, int n);
 
 double *linspace(double x0, double xf, int n);
 
+double interp4(FILE *f, double **states, double *xq, int *m);
+double **interp_bounds(double **states, double *xq, int n, int *m);
+
+double cost_from_file(FILE *f, double *state, int n);
+
+int fequal(double a, double b);
+
 InterpBound futurecost_interp_vals(FILE *f, double *state);
 
 #endif

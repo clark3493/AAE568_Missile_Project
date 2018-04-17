@@ -3,6 +3,8 @@
 
 double *f(double x, double z, double xdot, double zdot, double u, double dt,
             double m, double T, double g);
+            
+void state_limit(double *state, double **lims, int n);
 
 double theta_md_fun(double m,
                     double T,

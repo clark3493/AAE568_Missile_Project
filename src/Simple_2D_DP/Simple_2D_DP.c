@@ -231,15 +231,58 @@ int main(void)
   }
   fclose(fcost);
   
-  double state[] = {-50,-2000,80,90};
-  FILE *test = fopen(finalcostfilename,"r");
-  InterpBound ib = futurecost_interp_vals(test,state);
-  printf("x_low=%f,x_low_cost=%f\n",ib.low_pts[0],ib.low_vals[0]);
-  printf("x_high=%f,x_high_cost=%f\n",ib.high_pts[0],ib.high_vals[0]);
+  int *state_dims = (int *)malloc(4*sizeof(int));
+  if( state_dims == NULL ) {
+    fprintf(stderr,"Error malloc'ing state_dims\n");
+    return 0;
+  }
+  state_dims[0] = Nx;
+  state_dims[1] = Nz;
+  state_dims[2] = Nxdot;
+  state_dims[3] = Nzdot;
+  
+  double **states = (double **)malloc(4*sizeof(double *));
+  if( states == NULL ) {
+    fprintf(stderr,"Error malloc'ing states\n");
+    return 0;
+  }
+  for( ii=0; ii<4; ii++ ) {
+    states[ii] = (double *)malloc(state_dims[ii]*sizeof(double));
+    for( jj=0; jj<state_dims[ii]; jj++ ) {
+      if( ii == 0 )
+        states[ii][jj] = x_vec[jj];
+      if( ii == 1 )
+        states[ii][jj] = z_vec[jj];
+      if( ii == 2 )
+        states[ii][jj] = xdot_vec[jj];
+      if( ii == 3 )
+        states[ii][jj] = zdot_vec[jj];
+    }
+  }
+  
+  double **state_lims = (double **)malloc(4*sizeof(double *));
+  for( ii = 0; ii < 4; ii++ )
+    state_lims[ii] = (double *)malloc(2*sizeof(double));
+  
+  state_lims[0][0] = x_min;
+  state_lims[0][1] = x_max;
+  state_lims[1][0] = z_min;
+  state_lims[1][1] = z_max;
+  state_lims[2][0] = xdot_min;
+  state_lims[2][1] = xdot_max;
+  state_lims[3][0] = zdot_min;
+  state_lims[3][1] = zdot_max;
+  
+  /* INTERPOLATION TEST
+  double test_state[] = {2100,99,318.172996,4.543249};
+  FILE *test_file = fopen(finalcostfilename,"r");
+  double test_cost = interp4(test_file,states,test_state,state_dims);
+  printf("test_cost = %f\n",test_cost);
+  */
   
   /* ----- CALCULATE COST-TO-GO FOR EVERY STATE, AT EVERY TIME STEP -----
      ----- FOR EVERY POSSIBLE VALUE OF Tf ------------------------------- */
-  /*
+  
   time_t tstart = clock(), tstart_local;
   double tf,dt,L;
   
@@ -250,6 +293,9 @@ int main(void)
   double *state = (double *)malloc(4*sizeof(double));
   
   FILE *ffuturecost;
+  double mincost;
+  int minu_ind;
+  char temp[1024];
   
   for( int itf=0; itf<Ntf; itf++ ) {
     tf = tf_vec[itf];
@@ -263,39 +309,62 @@ int main(void)
       for( jj=0; jj<Nz; jj++ ) {
         for( kk=0; kk<Nxdot; kk++ ) {
           for( ll=0; ll<Nzdot; ll++ ) {
+            printf("i=%d,j=%d,k=%d,l=%d\n",ii,jj,kk,ll);
             /* get next state for every possible control */
-            /*for( mm=0; mm<Nu; mm++ ) {
+            for( mm=0; mm<Nu; mm++ ) {
               state = f(x_vec[ii],z_vec[jj],xdot_vec[kk],zdot_vec[ll],u_vec[mm],
                           dt,m,T,g);
+              state_limit(state,state_lims,4);
               x_next[mm] = state[0];
               z_next[mm] = state[1];
               xdot_next[mm] = state[2];
               zdot_next[mm] = state[3];
-            }*/
+            }
+            printf("Finished next state calcs\n");
             /* Get the optimal future cost for every time step */
-            /*for( tt=Ntau-2; tt>0; tt-- ) {*/
+            for( tt=Ntau-2; tt>0; tt-- ) {
+              printf("tt=%d\n",tt);
+              mincost = 9999999999;  /* initial high value */
               /* get future cost file for reading
                  get current cost file for writing */
-              /*memset(tfile1,0,sizeof(tfile1));
+              memset(tfile1,0,sizeof(tfile1));
               memset(tfile2,0,sizeof(tfile2));
               
               sprintf(tfile2,"data\\cost_tf%d_tau%d.csv",itf,tt);
-              if( tt == Ntau - 1 ) {
+              if( tt == Ntau - 2 ) {
                 strcpy(tfile1,"data\\finalcost.csv");
               }
               else {
                 sprintf(tfile1,"data\\cost_tf%d_tau%d.csv",itf,tt+1);
               }
               ffuturecost = fopen(tfile1,"r");
+              printf("opened the future cost file: %s\n",tfile1);
               
+              for( mm=0; mm<Nu; mm++ ) {
+                printf("in the control-time loop: mm=%d\n",mm);
+                state[0] = x_next[mm];
+                state[1] = z_next[mm];
+                state[2] = xdot_next[mm];
+                state[3] = zdot_next[mm];
+              
+                cost = L + interp4(ffuturecost,states,state,state_dims);
+                if( cost < mincost ) {
+                  mincost = cost;
+                  minu_ind = mm;
+                }
+              }
+                
               if( ii == 0 && jj == 0 && kk == 0 & ll == 0 ) {
                 fcost = fopen(tfile2,"w");
+                fprintf(fcost,"x,z,xdot,zdot,mincost,minu\n");
               }
               else {
                 fcost = fopen(tfile2,"a");
               }
               
-              
+              fprintf(fcost,"%f,%f,%f,%f,%f,%f\n",x_vec[ii],z_vec[jj],
+                      xdot_vec[kk],zdot_vec[ll],cost,u_vec[minu_ind]);
+                
               fclose(ffuturecost);
               fclose(fcost);
             }
@@ -303,8 +372,11 @@ int main(void)
         }
       }
     }
+    printf("Finished local solution in %f sec\n",(double)(clock()-tstart_local)/CLOCKS_PER_SEC);
+    printf("%f minutes elapsed = %f complete with full solution\n\n",(double)(clock()-tstart)/CLOCKS_PER_SEC/60,(double)itf/(double)(Ntf)*100);
   }
-  */
+  
+  printf("TOTAL STATE + CONTROL SPACE SOLUTION CALCULATED IN %f MINUTES\n\n",(double)(clock()-tstart)/CLOCKS_PER_SEC/60);
   
   return 1;  
 }
@@ -320,6 +392,19 @@ double *f(double x, double z, double xdot, double zdot, double u, double dt,
   xout[3] = zdot + dt * ( -T/m * sind(u) + g );
   
   return xout;
+}
+
+void state_limit(double *state, double **lims, int n) 
+{
+  int i;
+  for( i=0; i<n; i++ ) {
+    if( state[i] < lims[i][0] ) {
+      state[i] = lims[i][0];
+    }
+    else if( state[i] > lims[i][1] ) {
+      state[i] = lims[i][1];
+    }
+  }
 }
 
 double theta_md_fun(double m,

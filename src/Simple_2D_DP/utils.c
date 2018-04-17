@@ -2,11 +2,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "csv.h"
 #include "utils.h"
 
 #define BUFF_SIZE 1024
 #define MAX_FLD_SIZE 32
 #define MAX_FLDS 10
+#define epsilon .000001
 
 #define PI 3.14159265359
 
@@ -107,103 +109,154 @@ double *linspace(double x0, double xf, int n)
   return x;
 }
 
-InterpBound futurecost_interp_vals(FILE *f, double *state)
+double interp4(FILE *f, double **states, double *xq, int *m)
 {
-  double l=-99999999, h=99999999;
-  double x_low=l, x_low_cost, x_high=h, x_high_cost;
-  double z_low=l, z_low_cost, z_high=h, z_high_cost;
-  double xdot_low=l, xdot_low_cost, xdot_high=h, xdot_high_cost;
-  double zdot_low=l, zdot_low_cost, zdot_high=h, zdot_high_cost;
+  int i,j,k,l;
+  float t1,t2,t3,t4,N,cost,y=0;
+  double den = 1;
+  double *state_vec = (double *)malloc(4*sizeof(double));
   
-  double x,z,xdot,zdot,cost;
+  double **bounds = interp_bounds(states,xq,4,m);
+  if( bounds == NULL )
+    return -1;
   
-  int init = 1,i,n=0;
-  char buff[BUFF_SIZE];
-  char **flds = (char **)malloc(MAX_FLDS*sizeof(char*));
-  for(int c=0; c<MAX_FLDS; c++)
-    flds[c] = (char *)malloc(MAX_FLD_SIZE*sizeof(char));
-  char *fld;
+  for( i=0; i<4; i++ )
+    den = den * (bounds[i][1] - bounds[i][0]);
   
-  InterpBound ib = newInterpBound(4);
+  for( i=0; i<2; i++ ) {
+    for( j=0; j<2; j++ ) {
+      for( k=0; k<2; k++ ) {
+        for( l=0; l<2; l++ ) {
+          
+          if( i == 0 ) { t1 = bounds[0][1] - xq[0]; }
+          else { t1 = xq[0] - bounds[0][0]; }
+          
+          if( j == 0 ) { t2 = bounds[1][1] - xq[1]; }
+          else { t2 = xq[1] - bounds[1][0]; }
+          
+          if( k == 0 ) { t3 = bounds[2][1] - xq[2]; }
+          else { t3 = xq[2] - bounds[2][0]; }
+          
+          if( l == 0 ) { t4 = bounds[3][1] - xq[3]; }
+          else { t4 = xq[3] - bounds[3][0]; }
+        
+          N = t1*t2*t3*t4 / den;
+          if( N > 1 ) {
+            printf("N=%f\n",N);
+            printf("i,j,k,l=%d,%d,%d,%d\n",i,j,k,l);
+            printf("den = %f\n",den);
+            printf("t1,t2,t3,t4=%f,%f,%f,%f\n",t1,t2,t3,t4);
+            printf("\n");
+          }
+          state_vec[0] = bounds[0][i];
+          state_vec[1] = bounds[1][j];
+          state_vec[2] = bounds[2][k];
+          state_vec[3] = bounds[3][l];
+          cost = cost_from_file(f,state_vec,4);
+          rewind(f);
+          if( cost < 0 )
+            return -1;
+
+          y = y + N*cost;
+        }
+      }
+    }
+  }  
+  free(bounds);
+  free(state_vec);
+  return y;
+}
+
+double **interp_bounds(double **states, double *xq, int n, int *m)
+{
+  /*
+   *
+   * states = n x m
+   *    n = # variables
+   *    m = # states for the i'th variable
+   *
+   * bounds = n x 2
+   *    0th index is lower bound
+   *    1st index is upper bound
+   *
+   */
+  int i,j, temp;
+  double **bounds = (double **)malloc(n*sizeof(double *));
+  if( bounds == NULL )
+    return NULL;
   
-  while(!feof(f)) {
-    i = 0; n++;
-    if( n != 1 ) {
-      fgets(buff,sizeof(buff),f);
-      fld = strtok(buff,",");
-      while( fld != NULL ) {
-        memset(flds[i],'0',sizeof(flds[i]));
-        strcpy(flds[i],fld);
-        i++;
-        fld = strtok(NULL,",");
-      }
-      
-      x=atof(flds[0]);
-      z=atof(flds[1]);
-      xdot=atof(flds[2]);
-      zdot=atof(flds[3]);
-      cost=atof(flds[4]);
-      
-      if( x < x_high && x >= state[0] ) {
-        x_high = x;
-        x_high_cost = cost;
-      }
-      if( x > x_low && x <= state[0] ) {
-        x_low = x;
-        x_low_cost = cost;
-      }
-      if( z < z_high && z >= state[1] ) {
-        z_high = z;
-        z_high_cost = cost;
-      }
-      if( z > z_low && z <= state[1] ) {
-        z_low = z;
-        z_low_cost = cost;
-      }
-      if( xdot < xdot_high && xdot >= state[2] ) {
-        xdot_high = xdot;
-        xdot_high_cost = cost;
-      }
-      if( xdot > xdot_low && xdot <= state[2] ) {
-        xdot_low = xdot;
-        xdot_low_cost = cost;
-      }
-      if( zdot < zdot_high && zdot >= state[3] ) {
-        zdot_high = zdot;
-        zdot_high_cost = cost;
-      }
-      if( zdot > zdot_low && zdot <= state[3] ) {
-        zdot_low = zdot;
-        zdot_low_cost = cost;
+  for( i=0; i<n; i++ ) {
+    bounds[i] = (double *)malloc(2*sizeof(double));
+    if( bounds[i] == NULL ) {
+      for( j=0; j<i; j++ )
+        free(bounds[j]);
+      free(bounds);
+      return NULL;
+    }
+    if( xq[i] <= states[i][0] ) {
+      bounds[i][0] = states[i][0];
+      bounds[i][1] = states[i][1];
+    }
+    else if( xq[i] >= states[i][m[i]-1] ) {
+      bounds[i][0] = states[i][m[i]-2];
+      bounds[i][1] = states[i][m[i]-1];
+    }
+    else {
+      for( j=0; j<m[i]; j++ ) {
+        if( states[i][j] > xq[i] ) {
+          bounds[i][0] = states[i][j-1];
+          bounds[i][1] = states[i][j];
+          break;
+        }
       }
     }
   }
   
-  ib.low_pts[0] = x_low;
-  ib.low_vals[0] = x_low_cost;
-  ib.high_pts[0] = x_high;
-  ib.high_vals[0] = x_high_cost;
+  return bounds;
+}
+
+double cost_from_file(FILE *f, double *state, int n)
+{
+  int i, ln=0, found=0;
+  char buff[BUFF_SIZE];
+  double cost, tmp;
+  char **flds;
   
-  ib.low_pts[1] = z_low;
-  ib.low_vals[1] = z_low_cost;
-  ib.high_pts[1] = z_high;
-  ib.high_vals[1] = z_high_cost;
+  while( !feof(f) ) {
+    fgets(buff,sizeof(buff),f);
+    ln++;
+    if( found )
+      break;
+    if( ln != 1 ) {
+      flds = parse_csv(buff);
+      found=1;
+      for( i=0; i<n; i++ ) {
+        tmp = atof(flds[i]);
+        if( !fequal(tmp,state[i]) ) {
+          found=0;
+          break;
+        }
+      }
+      if ( found ) {
+        cost = atof(flds[4]);
+      }
+      free_csv_line(flds);
+    }
+  }
+  if( !found ) {
+    printf("state not found\n");
+    printf("state: %f,%f,%f,%f\n",state[0],state[1],state[2],state[3]);
+    return -1;
+  }
   
-  ib.low_pts[2] = xdot_low;
-  ib.low_vals[2] = xdot_low_cost;
-  ib.high_pts[2] = xdot_high;
-  ib.high_vals[2] = xdot_high_cost;
-  
-  ib.low_pts[3] = x_low;
-  ib.low_vals[3] = x_low_cost;
-  ib.high_pts[3] = x_high;
-  ib.high_vals[3] = x_high_cost;
-  
-  for( int c=0; c< MAX_FLDS; c++ )
-    free(flds[c]);
-  free(flds);
-  
-  return ib;
+  return cost;
+}
+
+int fequal(double a, double b)
+{
+  if( fabs(a-b) < epsilon )
+    return 1;
+  return 0;
 }
   
   
