@@ -293,7 +293,7 @@ int main(void)
   double *state = (double *)malloc(4*sizeof(double));
   
   FILE *ffuturecost;
-  double mincost;
+  double mincost, Vfuture;
   int minu_ind;
   char temp[1024];
   
@@ -305,73 +305,70 @@ int main(void)
     printf("Performing solution for tf = %f\n",tf);
     tstart_local = clock();
     
-    for( ii=0; ii<Nx; ii++ ) {
-      for( jj=0; jj<Nz; jj++ ) {
-        for( kk=0; kk<Nxdot; kk++ ) {
-          for( ll=0; ll<Nzdot; ll++ ) {
-            printf("i=%d,j=%d,k=%d,l=%d\n",ii,jj,kk,ll);
-            /* get next state for every possible control */
-            for( mm=0; mm<Nu; mm++ ) {
-              state = f(x_vec[ii],z_vec[jj],xdot_vec[kk],zdot_vec[ll],u_vec[mm],
-                          dt,m,T,g);
-              state_limit(state,state_lims,4);
-              x_next[mm] = state[0];
-              z_next[mm] = state[1];
-              xdot_next[mm] = state[2];
-              zdot_next[mm] = state[3];
-            }
-            printf("Finished next state calcs\n");
-            /* Get the optimal future cost for every time step */
-            for( tt=Ntau-2; tt>0; tt-- ) {
-              printf("tt=%d\n",tt);
-              mincost = 9999999999;  /* initial high value */
-              /* get future cost file for reading
-                 get current cost file for writing */
-              memset(tfile1,0,sizeof(tfile1));
-              memset(tfile2,0,sizeof(tfile2));
-              
-              sprintf(tfile2,"data\\cost_tf%d_tau%d.csv",itf,tt);
-              if( tt == Ntau - 2 ) {
-                strcpy(tfile1,"data\\finalcost.csv");
-              }
-              else {
-                sprintf(tfile1,"data\\cost_tf%d_tau%d.csv",itf,tt+1);
-              }
-              ffuturecost = fopen(tfile1,"r");
-              printf("opened the future cost file: %s\n",tfile1);
-              
+    for( tt=Ntau-2; tt>=0; tt-- ) {
+      printf("tt=%d\n",tt);
+      /* get future cost file for reading
+         get current cost file for writing */
+      memset(tfile1,0,sizeof(tfile1));
+      memset(tfile2,0,sizeof(tfile2));
+      
+      sprintf(tfile2,"data\\cost_tf%d_tau%d.csv",itf,tt);
+      if( tt == Ntau - 2 ) {
+        strcpy(tfile1,"data\\finalcost.csv");
+      }
+      else {
+        sprintf(tfile1,"data\\cost_tf%d_tau%d.csv",itf,tt+1);
+      }
+      ffuturecost = fopen(tfile1,"r");
+      printf("opened the future cost file: %s\n",tfile1);
+      
+      if( tt == Ntau-2 ) {
+        fcost = fopen(tfile2,"w");
+        fprintf(fcost,"x,z,xdot,zdot,mincost,minu\n");
+      }
+      else {
+        fcost = fopen(tfile2,"a");
+      }
+      printf("opened the current cost file: %s\n",tfile2);
+      
+      for( ii=0; ii<Nx; ii++ ) {
+        for( jj=0; jj<Nz; jj++ ) {
+          for( kk=0; kk<Nxdot; kk++ ) {
+            for( ll=0; ll<Nzdot; ll++ ) {
+              printf("i=%d,j=%d,k=%d,l=%d\n",ii,jj,kk,ll);
+              mincost = 999999999; /* arbitrary initial high cost */
               for( mm=0; mm<Nu; mm++ ) {
-                printf("in the control-time loop: mm=%d\n",mm);
-                state[0] = x_next[mm];
-                state[1] = z_next[mm];
-                state[2] = xdot_next[mm];
-                state[3] = zdot_next[mm];
-              
-                cost = L + interp4(ffuturecost,states,state,state_dims);
+                /* get next state for every possible control */
+                state = f(x_vec[ii],z_vec[jj],xdot_vec[kk],zdot_vec[ll],u_vec[mm],
+                            dt,m,T,g);
+                state_limit(state,state_lims,4);
+                
+                Vfuture = interp4(ffuturecost,states,state,state_dims);
+                if( Vfuture < 0 ) {
+                  printf("\n\nERROR IN COST INTERPOLATION\n");
+                  printf("i=%d,j=%d,k=%d,l=%d,mm=%d\n",ii,jj,kk,ll,mm);
+                  printf("itf=%d,tt=%d,file=%s\n\n",itf,tt,tfile1);
+                  return 0;
+                }
+                
+                cost = L + Vfuture;
                 if( cost < mincost ) {
                   mincost = cost;
                   minu_ind = mm;
                 }
               }
-                
-              if( ii == 0 && jj == 0 && kk == 0 & ll == 0 ) {
-                fcost = fopen(tfile2,"w");
-                fprintf(fcost,"x,z,xdot,zdot,mincost,minu\n");
-              }
-              else {
-                fcost = fopen(tfile2,"a");
-              }
               
               fprintf(fcost,"%f,%f,%f,%f,%f,%f\n",x_vec[ii],z_vec[jj],
                       xdot_vec[kk],zdot_vec[ll],cost,u_vec[minu_ind]);
-                
-              fclose(ffuturecost);
-              fclose(fcost);
             }
           }
         }
       }
-    }
+                
+      fclose(ffuturecost);
+      fclose(fcost);
+    }            
+    
     printf("Finished local solution in %f sec\n",(double)(clock()-tstart_local)/CLOCKS_PER_SEC);
     printf("%f minutes elapsed = %f complete with full solution\n\n",(double)(clock()-tstart)/CLOCKS_PER_SEC/60,(double)itf/(double)(Ntf)*100);
   }

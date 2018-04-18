@@ -164,7 +164,7 @@ if step1 == 1
             C * sqrt( (x_state-x_target).^2 + (z_state-z_target).^2 );
     end
     clear impact_angle valid_final_state_inds;
-    keyboard
+    
     tstart = tic;
     for itf = 1:Ntf
         tf = tf_vec(itf);
