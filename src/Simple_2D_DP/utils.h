@@ -24,10 +24,13 @@ double mean(double *x, int n);
 
 double *linspace(double x0, double xf, int n);
 
-double interp4(FILE *f, double **states, double *xq, int *m);
+double interp4(double **states, double *xq, int *m, double ****V);
+int **interp_bound_inds(double **states, double *xq, int n, int *m);
 double **interp_bounds(double **states, double *xq, int n, int *m);
 
-double cost_from_file(FILE *f, double *state, int n);
+void cost_from_file4(FILE *f, int *dims, double ****V);
+
+double ****p4(int *size);
 
 int fequal(double a, double b);
 

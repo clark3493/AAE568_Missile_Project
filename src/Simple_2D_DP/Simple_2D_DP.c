@@ -293,7 +293,11 @@ int main(void)
   double *state = (double *)malloc(4*sizeof(double));
   
   FILE *ffuturecost;
-  double mincost, Vfuture;
+  double mincost,Vfuture, ****Vfuture_mat = p4(state_dims);
+  if( Vfuture_mat == NULL ) {
+    printf("ERROR GENERATING VFUTURE MAT\n");
+    return 0;
+  }
   int minu_ind;
   char temp[1024];
   
@@ -306,7 +310,7 @@ int main(void)
     tstart_local = clock();
     
     for( tt=Ntau-2; tt>=0; tt-- ) {
-      printf("tt=%d\n",tt);
+      printf("tt=%d, itf=%d\n",tt,itf);
       /* get future cost file for reading
          get current cost file for writing */
       memset(tfile1,0,sizeof(tfile1));
@@ -324,18 +328,22 @@ int main(void)
       
       if( tt == Ntau-2 ) {
         fcost = fopen(tfile2,"w");
-        fprintf(fcost,"x,z,xdot,zdot,mincost,minu\n");
       }
       else {
         fcost = fopen(tfile2,"a");
       }
       printf("opened the current cost file: %s\n",tfile2);
       
+      cost_from_file4(ffuturecost,state_dims,Vfuture_mat);
+      
       for( ii=0; ii<Nx; ii++ ) {
         for( jj=0; jj<Nz; jj++ ) {
           for( kk=0; kk<Nxdot; kk++ ) {
             for( ll=0; ll<Nzdot; ll++ ) {
-              printf("i=%d,j=%d,k=%d,l=%d\n",ii,jj,kk,ll);
+              
+              if( ii==0 && jj==0 && kk==0 && ll==0 )
+                fprintf(fcost,"x,y,xdot,zdot,mincost,minu\n");
+              
               mincost = 999999999; /* arbitrary initial high cost */
               for( mm=0; mm<Nu; mm++ ) {
                 /* get next state for every possible control */
@@ -343,13 +351,14 @@ int main(void)
                             dt,m,T,g);
                 state_limit(state,state_lims,4);
                 
-                Vfuture = interp4(ffuturecost,states,state,state_dims);
+                Vfuture = interp4(states,state,state_dims,Vfuture_mat);
                 if( Vfuture < 0 ) {
                   printf("\n\nERROR IN COST INTERPOLATION\n");
                   printf("i=%d,j=%d,k=%d,l=%d,mm=%d\n",ii,jj,kk,ll,mm);
                   printf("itf=%d,tt=%d,file=%s\n\n",itf,tt,tfile1);
                   return 0;
                 }
+                free(state);
                 
                 cost = L + Vfuture;
                 if( cost < mincost ) {

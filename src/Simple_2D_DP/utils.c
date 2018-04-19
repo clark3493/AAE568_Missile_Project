@@ -109,62 +109,110 @@ double *linspace(double x0, double xf, int n)
   return x;
 }
 
-double interp4(FILE *f, double **states, double *xq, int *m)
+double interp4(double **states, double *xq, int *m, double ****V)
 {
   int i,j,k,l;
-  float t1,t2,t3,t4,N,cost,y=0;
+  int iup,jup,kup,lup;
+  int idown,jdown,kdown,ldown;
+  double t1,t2,t3,t4,N,cost,y=0;
   double den = 1;
-  double *state_vec = (double *)malloc(4*sizeof(double));
   
-  double **bounds = interp_bounds(states,xq,4,m);
-  if( bounds == NULL )
+  int **bound_inds = interp_bound_inds(states,xq,4,m);
+  if( bound_inds == NULL )
     return -1;
   
+  idown = bound_inds[0][0];
+  iup   = bound_inds[0][1];
+  
+  jdown = bound_inds[1][0];
+  jup   = bound_inds[1][1];
+  
+  kdown = bound_inds[2][0];
+  kup   = bound_inds[2][1];
+  
+  ldown = bound_inds[3][0];
+  lup   = bound_inds[3][1];
+  
   for( i=0; i<4; i++ )
-    den = den * (bounds[i][1] - bounds[i][0]);
+    den = den * (states[i][bound_inds[i][1]]-states[i][bound_inds[i][0]]);
   
   for( i=0; i<2; i++ ) {
     for( j=0; j<2; j++ ) {
       for( k=0; k<2; k++ ) {
         for( l=0; l<2; l++ ) {
           
-          if( i == 0 ) { t1 = bounds[0][1] - xq[0]; }
-          else { t1 = xq[0] - bounds[0][0]; }
+          if( i == 0 ) { t1 = states[0][iup] - xq[0]; }
+          else { t1 = xq[0] - states[0][idown]; }
           
-          if( j == 0 ) { t2 = bounds[1][1] - xq[1]; }
-          else { t2 = xq[1] - bounds[1][0]; }
+          if( j == 0 ) { t2 = states[1][jup] - xq[1]; }
+          else { t2 = xq[1] - states[1][jdown]; }
           
-          if( k == 0 ) { t3 = bounds[2][1] - xq[2]; }
-          else { t3 = xq[2] - bounds[2][0]; }
+          if( k == 0 ) { t3 = states[2][kup] - xq[2]; }
+          else { t3 = xq[2] - states[2][kdown]; }
           
-          if( l == 0 ) { t4 = bounds[3][1] - xq[3]; }
-          else { t4 = xq[3] - bounds[3][0]; }
-        
-          N = t1*t2*t3*t4 / den;
+          if( l == 0 ) { t4 = states[3][lup] - xq[3]; }
+          else { t4 = xq[3] - states[3][ldown]; }
+          
+          N = t1*t2*t3*t4 / den;          
+          cost = V[bound_inds[0][i]][bound_inds[1][j]][bound_inds[2][k]][bound_inds[3][l]];
+          
           if( N > 1 ) {
-            printf("N=%f\n",N);
-            printf("i,j,k,l=%d,%d,%d,%d\n",i,j,k,l);
-            printf("den = %f\n",den);
-            printf("t1,t2,t3,t4=%f,%f,%f,%f\n",t1,t2,t3,t4);
+            printf("  POSSIBLE INTERPOLATION ERROR\n");
+            printf("    N=%f\n",N);
+            printf("    i,j,k,l=%d,%d,%d,%d\n",i,j,k,l);
+            printf("    den = %f\n",den);
+            printf("    t1,t2,t3,t4=%f,%f,%f,%f\n",t1,t2,t3,t4);
+            printf("    state bound = %f,%f,%f,%f\n",states[0][bound_inds[0][i]],states[1][bound_inds[1][j]],states[2][bound_inds[2][k]],states[3][bound_inds[3][l]]);
+            printf("    state = %f,%f,%f,%f\n",xq[0],xq[1],xq[2],xq[3]);
+            printf("    cost = %f\n",cost);
             printf("\n");
           }
-          state_vec[0] = bounds[0][i];
-          state_vec[1] = bounds[1][j];
-          state_vec[2] = bounds[2][k];
-          state_vec[3] = bounds[3][l];
-          cost = cost_from_file(f,state_vec,4);
-          rewind(f);
-          if( cost < 0 )
-            return -1;
-
+          
           y = y + N*cost;
         }
       }
     }
-  }  
-  free(bounds);
-  free(state_vec);
+  }
+  for( i=0; i<4; i++ )
+    free(bound_inds[i]);
+  free(bound_inds);
   return y;
+}
+
+int **interp_bound_inds(double **states, double *xq, int n, int *m)
+{
+  int i,j, temp;
+  int **bound_inds = (int **)malloc(n*sizeof(int *));
+  if( bound_inds == NULL )
+    return NULL;
+  
+  for( i=0; i<n; i++ ) {
+    bound_inds[i] = (int *)malloc(2*sizeof(int));
+    if( bound_inds[i] == NULL ) {
+      for( j=0; j<i; j++ )
+        free(bound_inds[j]);
+      free(bound_inds);
+      return NULL;
+    }
+    if( xq[i] <= states[i][0] ) {
+      bound_inds[i][0] = 0;
+      bound_inds[i][1] = 1;
+    }
+    else if( xq[i] >= states[i][m[i]-1] ) {
+      bound_inds[i][0] = m[i]-2;
+      bound_inds[i][1] = m[i]-1;
+    }
+    else {
+      for( j=0; j<m[i]; j++ ) {
+        if( states[i][j] > xq[i] ) {
+          bound_inds[i][0] = j-1;
+          bound_inds[i][1] = j;
+          break;
+        }
+      }
+    }
+  }
+  return bound_inds;
 }
 
 double **interp_bounds(double **states, double *xq, int n, int *m)
@@ -215,6 +263,29 @@ double **interp_bounds(double **states, double *xq, int n, int *m)
   return bounds;
 }
 
+void cost_from_file4(FILE *f, int *dims, double ****V) {
+  int i,j,k,l;
+  char buff[BUFF_SIZE];
+  double cost;
+  char **flds;
+  
+  fgets(buff,sizeof(buff),f); /* skip header line */
+  
+  for( i=0; i<dims[0]; i++ ) {
+    for( j=0; j<dims[1]; j++ ) {
+      for( k=0; k<dims[2]; k++ ) {
+        for( l=0; l<dims[3]; l++ ) {
+          fgets(buff,sizeof(buff),f);
+          flds = parse_csv(buff);
+          V[i][j][k][l] = atof(flds[4]);
+          free_csv_line(flds);
+        }
+      }
+    }
+  }
+}
+
+/*
 double cost_from_file(FILE *f, double *state, int n)
 {
   int i, ln=0, found=0;
@@ -250,6 +321,31 @@ double cost_from_file(FILE *f, double *state, int n)
   }
   
   return cost;
+}
+*/
+
+double ****p4(int *size) {
+  int i,j,k;
+  double ****p = (double ****)malloc(size[0]*sizeof(double***));
+  if( p == NULL )
+    return NULL;
+  
+  for( i=0; i<size[0]; i++ ) {
+    p[i] = (double ***)malloc(size[1]*sizeof(double **));
+    if( p[i] == NULL )
+      return NULL;
+    for( j=0; j<size[1]; j++ ) {
+      p[i][j] = (double **)malloc(size[2]*sizeof(double *));
+      if( p[i][j] == NULL )
+        return NULL;
+      for( k=0; k<size[2]; k++ ) {
+        p[i][j][k] = (double *)malloc(size[3]*sizeof(double));
+        if( p[i][j][k] == NULL )
+          return NULL;
+      }
+    }
+  }
+  return p;
 }
 
 int fequal(double a, double b)
