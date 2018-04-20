@@ -1,0 +1,9 @@
+Path_Calculation script is currently configured for tf4
+- tf is manually input as 17.678714
+
+-The script looks for a directory with tfX_\cost_tf4_tauY
+--Currently, it only generates for a single tf, but iterates through the tau 
+
+To execute:
+-Unzip the tf4 file
+-Update the path in the script in order to find it (line 55 and line 56)
